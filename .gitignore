@@ -3,6 +3,9 @@ build/
 *.apk
 *.dex
 
+# Builds archivados (versiones entregadas; se suben a propósito)
+!builds/*.apk
+
 # APKs de fábrica descompilados y dumps (propietarios, ~300 MB)
 nwd/
 
