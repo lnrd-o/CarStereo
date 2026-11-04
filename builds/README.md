@@ -13,6 +13,23 @@ se guardan aquí porque son la única copia que existe de varias de ellas.
 | v7 – v8.2 | 4 nov | **ChipDsp** (DSP del chip, CD3313) |
 | v8.3 – v8.4 | 4 nov | **MapView**, **BatteryLogger/StereoVoltage** (voltaje, sensor interno), ObdClient, DtcInfo |
 | v8.5 | 4 nov | + **BleLink** (enlace BLE) |
+| v9 | 4 nov | **Rehecha sobre la fuente local** (ver abajo): FFT 24 bandas, 3 vistas, mapa OSM, voltaje interno, EQ 24 bandas y apariencia |
+
+## v9: continuación sobre la fuente local
+
+`CleanLauncher-v9.apk` no se compiló sobre v8.5 (esa fuente no existe), sino sobre
+la fuente de este repo. Implementa de nuevo lo pedido:
+
+- **WaveView**: espectro FFT de 24 bandas como fondo, encendible/apagable.
+- **MainActivity**: pager con 3 vistas (Clásico, Enfoque, Viaje); la tarjeta de
+  audio muestra radio (RDS) o Bluetooth/canción según lo que esté sonando.
+- **MapView/MapActivity**: mapa OpenStreetMap/CARTO con tema claro/oscuro y el
+  color de acento del sistema.
+- **StereoVoltage/BatteryLog/BatteryLogger/BatteryActivity**: voltaje del sensor
+  interno del radio (sin OBD), muestra cada minuto, gráfico e historial de 7 días.
+- **ColorActivity**: color de acento, tema y toggle del fondo FFT.
+- **EqActivity**: 24 bandas de software mapeadas al DSP de 10 bandas (CD3313).
+- `CleanLauncher-v9-compartir.apk`: variante sin fotos ni voces, lista para correo.
 
 ## ⚠️ Falta la fuente de v4–v8.5
 

@@ -58,29 +58,35 @@ final class Ui {
     }
 
     static Drawable background(Context c) {
+        int accent = Accent.color(c);
+        int second = Accent.secondary(c);
         if (isDark(c)) {
             GradientDrawable base = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
                     new int[]{0xFF0C0C12, 0xFF050507, 0xFF000000});
             GradientDrawable glow = new GradientDrawable();
             glow.setGradientType(GradientDrawable.RADIAL_GRADIENT);
-            glow.setGradientRadius(dp(c, 560));
-            glow.setGradientCenter(0.95f, 0.95f);
-            glow.setColors(new int[]{0x223F5AFF, 0x003F5AFF});
+            glow.setGradientRadius(dp(c, 620));
+            glow.setGradientCenter(0.92f, 0.92f);
+            glow.setColors(new int[]{withAlpha(accent, 0x26), withAlpha(accent, 0x00)});
             return new LayerDrawable(new Drawable[]{base, glow});
         }
         GradientDrawable base = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[]{0xFF1B2C8C, 0xFF20206E, 0xFF371764});
+                new int[]{Accent.dark(c), 0xFF20206E, 0xFF2A1450});
         GradientDrawable glowLeft = new GradientDrawable();
         glowLeft.setGradientType(GradientDrawable.RADIAL_GRADIENT);
         glowLeft.setGradientRadius(dp(c, 520));
         glowLeft.setGradientCenter(0.15f, 0.1f);
-        glowLeft.setColors(new int[]{0x553FA9FF, 0x003FA9FF});
+        glowLeft.setColors(new int[]{withAlpha(accent, 0x66), withAlpha(accent, 0x00)});
         GradientDrawable glowRight = new GradientDrawable();
         glowRight.setGradientType(GradientDrawable.RADIAL_GRADIENT);
         glowRight.setGradientRadius(dp(c, 560));
         glowRight.setGradientCenter(0.95f, 0.95f);
-        glowRight.setColors(new int[]{0x66B04CFF, 0x00B04CFF});
+        glowRight.setColors(new int[]{withAlpha(second, 0x66), withAlpha(second, 0x00)});
         return new LayerDrawable(new Drawable[]{base, glowLeft, glowRight});
+    }
+
+    private static int withAlpha(int color, int alpha) {
+        return (color & 0x00FFFFFF) | (alpha << 24);
     }
 
     static GradientDrawable card(Context c) {
@@ -88,7 +94,7 @@ final class Ui {
         GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
                 dark ? new int[]{0xFF17171E, 0xFF101015} : new int[]{0x4D5B6CFF, 0x333B3FB8});
         bg.setCornerRadius(dp(c, 18));
-        bg.setStroke(dp(c, 1), dark ? 0x14FFFFFF : 0x337F9CFF);
+        bg.setStroke(dp(c, 1), dark ? withAlpha(Accent.color(c), 0x1A) : withAlpha(Accent.color(c), 0x55));
         return bg;
     }
 
@@ -116,8 +122,8 @@ final class Ui {
         b.setImageResource(icon);
         int pad = Math.round(sizeDp * 0.24f);
         b.setPadding(dp(c, pad), dp(c, pad), dp(c, pad), dp(c, pad));
-        b.setBackground(circle(filled ? Color.WHITE : 0x26FFFFFF));
-        b.setColorFilter(filled ? 0xFF2A1F6E : Color.WHITE);
+        b.setBackground(circle(filled ? Accent.color(c) : 0x26FFFFFF));
+        b.setColorFilter(Color.WHITE);
         pressable(b, 0.88f);
         b.setOnClickListener(v -> action.run());
         return b;

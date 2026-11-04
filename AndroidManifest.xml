@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.simple.carlauncher"
-    android:versionCode="6"
-    android:versionName="6.0">
+    android:versionCode="9"
+    android:versionName="9.0">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
@@ -58,6 +60,23 @@
         <service android:name=".GreeterService" />
 
         <service android:name=".Odometer" />
+
+        <service android:name=".BatteryLogger" />
+
+        <activity
+            android:name=".BatteryActivity"
+            android:label="Batería"
+            android:configChanges="orientation|screenSize|keyboardHidden|locale" />
+
+        <activity
+            android:name=".MapActivity"
+            android:label="Mapa"
+            android:configChanges="orientation|screenSize|keyboardHidden|locale" />
+
+        <activity
+            android:name=".ColorActivity"
+            android:label="Apariencia"
+            android:configChanges="orientation|screenSize|keyboardHidden|locale" />
 
         <activity
             android:name=".SetupActivity"

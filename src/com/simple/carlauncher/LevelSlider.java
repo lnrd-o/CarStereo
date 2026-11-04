@@ -34,7 +34,7 @@ public class LevelSlider extends View {
         d = c.getResources().getDisplayMetrics().density;
         track.setColor(0x26FFFFFF);
         knob.setColor(0xFFFFFFFF);
-        knob.setShadowLayer(6 * d, 0, 0, 0x882EE6FF);
+        knob.setShadowLayer(6 * d, 0, 0, Accent.alpha(c, 0x88));
         centre.setColor(0x55FFFFFF);
         setLayerType(LAYER_TYPE_SOFTWARE, null);
     }
@@ -54,9 +54,10 @@ public class LevelSlider extends View {
 
     @Override
     protected void onSizeChanged(int w, int h, int ow, int oh) {
+        int[] g = Accent.gradient(getContext());
         fill.setShader(vertical
-                ? new LinearGradient(0, h, 0, 0, 0xFF2EE6FF, 0xFFB45CFF, Shader.TileMode.CLAMP)
-                : new LinearGradient(0, 0, w, 0, 0xFF2EE6FF, 0xFFB45CFF, Shader.TileMode.CLAMP));
+                ? new LinearGradient(0, h, 0, 0, g[0], g[1], Shader.TileMode.CLAMP)
+                : new LinearGradient(0, 0, w, 0, g[0], g[1], Shader.TileMode.CLAMP));
     }
 
     @Override

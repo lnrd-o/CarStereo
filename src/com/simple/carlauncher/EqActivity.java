@@ -12,14 +12,31 @@ import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-/** Equalizer: presets, 10-band EQ, bass/mid/treble, loudness, balance/fader and auto mode. */
+/**
+ * Equalizer: 24 software bands mapped onto the chip's 10-band DSP, plus presets, bass/mid/
+ * treble, loudness, balance/fader and the automatic mode.
+ *
+ * The CD3313 path only exposes 10 bands, so the extra 14 are interpolated in software: the
+ * 24 sliders build a curve and the 10 hardware bands are set from it.
+ */
 public class EqActivity extends Activity {
+
+    private static final int SOFT_BANDS = 24;
+    private static final double[] SOFT_FREQ = new double[SOFT_BANDS];
+    private static final double[] HW_FREQ = {32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000};
+
+    static {
+        for (int i = 0; i < SOFT_BANDS; i++) {
+            SOFT_FREQ[i] = 20 * Math.pow(1000, i / (double) (SOFT_BANDS - 1));
+        }
+    }
 
     private final SoundClient sound = new SoundClient();
     private final Handler handler = new Handler();
 
-    private final LevelSlider[] bands = new LevelSlider[SoundClient.BANDS];
-    private final TextView[] bandValues = new TextView[SoundClient.BANDS];
+    private final LevelSlider[] bands = new LevelSlider[SOFT_BANDS];
+    private final TextView[] bandValues = new TextView[SOFT_BANDS];
+    private final int[] soft = new int[SOFT_BANDS];
     private final TextView[] presetChips = new TextView[SoundClient.PRESET_NAMES.length];
     private LevelSlider bass, middle, treble;
     private BalancePad pad;
@@ -44,7 +61,7 @@ public class EqActivity extends Activity {
         LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(-1, 0, 1f);
         blp.topMargin = dp(10);
         root.addView(body, blp);
-        body.addView(buildBands(), new LinearLayout.LayoutParams(0, -1, 1.55f));
+        body.addView(buildBands(), new LinearLayout.LayoutParams(0, -1, 2.2f));
 
         LinearLayout right = new LinearLayout(this);
         right.setOrientation(LinearLayout.VERTICAL);
@@ -72,6 +89,10 @@ public class EqActivity extends Activity {
         title.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
         title.setPadding(dp(16), 0, 0, 0);
         bar.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        TextView bandsInfo = Ui.text(this, "24 bandas → DSP 10", 12, 0x99FFFFFF);
+        bandsInfo.setPadding(0, 0, dp(12), 0);
+        bar.addView(bandsInfo);
 
         autoInfo = Ui.text(this, "", 13, 0xB3FFFFFF);
         autoInfo.setPadding(0, 0, dp(12), 0);
@@ -110,7 +131,6 @@ public class EqActivity extends Activity {
         scroll.setHorizontalScrollBarEnabled(false);
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        // Standard, Pop, Rock, ... first; "Personalizado" last.
         int[] order = {1, 2, 3, 4, 5, 6, 7, 8, 0};
         for (int idx : order) {
             TextView c = chip(SoundClient.PRESET_NAMES[idx]);
@@ -132,17 +152,23 @@ public class EqActivity extends Activity {
 
     private View buildBands() {
         LinearLayout card = new LinearLayout(this);
-        card.setPadding(dp(8), dp(12), dp(8), dp(10));
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(8), dp(10), dp(8), dp(8));
         card.setBackground(Ui.card(this));
-        for (int b = 0; b < SoundClient.BANDS; b++) {
-            int band = b;
+
+        HorizontalScrollView scroll = new HorizontalScrollView(this);
+        scroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout row = new LinearLayout(this);
+        for (int b = 0; b < SOFT_BANDS; b++) {
+            final int band = b;
             LinearLayout col = new LinearLayout(this);
             col.setOrientation(LinearLayout.VERTICAL);
             col.setGravity(Gravity.CENTER_HORIZONTAL);
-            bandValues[b] = Ui.text(this, "0", 13, Color.WHITE);
+            bandValues[b] = Ui.text(this, "0", 9, Color.WHITE);
             col.addView(bandValues[b]);
             bands[b] = new LevelSlider(this, true, SoundClient.BAND_MAX);
             bands[b].setListener((s, v, done) -> {
+                soft[band] = v;
                 bandValues[band].setText(signed(v - 3));
                 if (done) {
                     EqAuto.setEnabled(this, false);
@@ -151,14 +177,16 @@ public class EqActivity extends Activity {
                         preset = SoundClient.EQ_CUSTOM;
                         refreshChips();
                     }
-                    sound.setBand(band, v);
+                    applySoft();
                 }
             });
             col.addView(bands[b], new LinearLayout.LayoutParams(-1, 0, 1f));
-            TextView hz = Ui.text(this, SoundClient.BAND_LABELS[b], 12, 0x99FFFFFF);
+            TextView hz = Ui.text(this, label(b), 9, 0x99FFFFFF);
             col.addView(hz);
-            card.addView(col, new LinearLayout.LayoutParams(0, -1, 1f));
+            row.addView(col, new LinearLayout.LayoutParams(dp(36), -1));
         }
+        scroll.addView(row);
+        card.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
         return card;
     }
 
@@ -242,13 +270,54 @@ public class EqActivity extends Activity {
         refreshChips();
     }
 
+    /** Reads the 10 hardware bands and expands them to the 24 software sliders. */
     private void loadBands() {
-        for (int b = 0; b < SoundClient.BANDS; b++) {
-            int v = sound.getBand(b);
-            if (v < 0) continue;
-            bands[b].setValue(v);
-            bandValues[b].setText(signed(v - 3));
+        int[] hw = new int[SoundClient.BANDS];
+        boolean any = false;
+        for (int j = 0; j < SoundClient.BANDS; j++) {
+            int v = sound.getBand(j);
+            if (v >= 0) {
+                hw[j] = v;
+                any = true;
+            } else {
+                hw[j] = 3;
+            }
         }
+        if (!any) return;
+        for (int i = 0; i < SOFT_BANDS; i++) {
+            soft[i] = interpolate(hw, HW_FREQ, SOFT_FREQ[i]);
+            bands[i].setValue(soft[i]);
+            bandValues[i].setText(signed(soft[i] - 3));
+        }
+    }
+
+    /** Sends the 24-band curve to the chip by sampling it at the 10 hardware frequencies. */
+    private void applySoft() {
+        for (int j = 0; j < SoundClient.BANDS; j++) {
+            int v = interpolate(soft, SOFT_FREQ, HW_FREQ[j]);
+            sound.setBand(j, Math.max(0, Math.min(SoundClient.BAND_MAX, v)));
+        }
+    }
+
+    /** Log-frequency interpolation: value of a curve at an arbitrary frequency. */
+    private static int interpolate(int[] values, double[] freqs, double at) {
+        if (at <= freqs[0]) return values[0];
+        if (at >= freqs[freqs.length - 1]) return values[values.length - 1];
+        for (int i = 0; i < freqs.length - 1; i++) {
+            if (at <= freqs[i + 1]) {
+                double t = (Math.log(at) - Math.log(freqs[i]))
+                        / (Math.log(freqs[i + 1]) - Math.log(freqs[i]));
+                return (int) Math.round(values[i] + t * (values[i + 1] - values[i]));
+            }
+        }
+        return values[values.length - 1];
+    }
+
+    private static String label(int i) {
+        if (i % 3 != 0 && i != SOFT_BANDS - 1) return "";
+        double f = SOFT_FREQ[i];
+        if (f < 1000) return String.valueOf(Math.round(f));
+        return (Math.round(f / 100.0) / 10.0) + "k";
     }
 
     private void setTone(LevelSlider s, int v) {
@@ -272,7 +341,7 @@ public class EqActivity extends Activity {
         bg.setCornerRadius(dp(18));
         if (on) {
             bg.setOrientation(GradientDrawable.Orientation.LEFT_RIGHT);
-            bg.setColors(new int[]{0xFF2EB8FF, 0xFF8A4DFF});
+            bg.setColors(Accent.gradient(this));
         } else {
             bg.setColor(0x26FFFFFF);
         }
