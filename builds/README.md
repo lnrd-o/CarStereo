@@ -15,6 +15,22 @@ se guardan aquí porque son la única copia que existe de varias de ellas.
 | v8.5 | 4 nov | + **BleLink** (enlace BLE) |
 | v9 | 4 nov | **Rehecha sobre la fuente local** (ver abajo): FFT 24 bandas, 3 vistas, mapa OSM, voltaje interno, EQ 24 bandas y apariencia |
 | v9.1 | 4 nov | **HCN**: radio y BT de fábrica del Corsa + **RDS RadioText** |
+| v9.2 | 4 nov | versionCode 14 (por encima de v8.5) — instalar tras desinstalar la v8.5 |
+
+## Instalación sobre la v8.5
+
+La v8.5 la firmó el sandbox de Claude con **otra clave** (certificado distinto) y
+tiene `versionCode 13`. Android no permite actualizar entre firmas distintas, así
+que hay que **desinstalar** `com.simple.carlauncher` y luego instalar la v9.2:
+
+```sh
+adb uninstall com.simple.carlauncher
+adb install CleanLauncher-v9.2.apk
+```
+
+La v9.2 usa `versionCode 14` para que las próximas actualizaciones (firmadas con
+la keystore de este equipo) no vuelvan a bajar de versión. Desinstalar borra los
+datos de la app (perfil, historial de voltaje).
 
 ## v9.1: HCN + RadioText
 
