@@ -14,6 +14,19 @@ se guardan aquí porque son la única copia que existe de varias de ellas.
 | v8.3 – v8.4 | 4 nov | **MapView**, **BatteryLogger/StereoVoltage** (voltaje, sensor interno), ObdClient, DtcInfo |
 | v8.5 | 4 nov | + **BleLink** (enlace BLE) |
 | v9 | 4 nov | **Rehecha sobre la fuente local** (ver abajo): FFT 24 bandas, 3 vistas, mapa OSM, voltaje interno, EQ 24 bandas y apariencia |
+| v9.1 | 4 nov | **HCN**: radio y BT de fábrica del Corsa + **RDS RadioText** |
+
+## v9.1: HCN + RadioText
+
+- **`HcnRadio`**: cliente Binder de `com.hcn.autoradio` (radio HCN). Lee
+  frecuencia, PS y **RadioText** (`getRdsRT`, TX 54), presets, y controla
+  seek/preset/play.
+- **`HcnBt`**: cliente de `com.hcn.bluetoothservice` (música BT HCN) con ID3,
+  estado de reproducción y comandos AVRCP.
+- **`Profile.isHcn()`**: detecta equipos HCN (Corsa) frente a NWD (Epica).
+- El inicio y la pantalla de Radio muestran el **RadioText** con marquesina.
+- La pantalla Bluetooth usa el servicio HCN y enlaza al teléfono de fábrica
+  (`com.autochips.bluetooth`).
 
 ## v9: continuación sobre la fuente local
 

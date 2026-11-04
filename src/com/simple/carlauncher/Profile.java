@@ -74,6 +74,16 @@ final class Profile {
         return nwd;
     }
 
+    private static Boolean hcn;
+
+    /** HCN head unit (Corsa-style): HCN radio and/or Bluetooth music services installed. */
+    static boolean isHcn(Context c) {
+        if (hcn == null) {
+            hcn = HcnRadio.installed(c) || HcnBt.installed(c);
+        }
+        return hcn;
+    }
+
     private static boolean installed(PackageManager pm, String pkg) {
         try {
             pm.getPackageInfo(pkg, 0);

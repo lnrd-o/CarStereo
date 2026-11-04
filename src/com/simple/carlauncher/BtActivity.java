@@ -18,10 +18,13 @@ import android.widget.Toast;
 public class BtActivity extends Activity implements NowPlaying.Listener {
 
     private static final String FACTORY_PHONE = "com.nwd.android.phone/.home_horizontalActivity";
+    private static final String HCN_PHONE = "com.autochips.bluetooth/.MainBluetoothActivity";
+    private static final String HCN_BT_MUSIC = "com.autochips.bluetooth/.BtMusicActivity";
 
     private final Handler handler = new Handler();
     private NowPlaying nowPlaying;
     private BtClient bt;
+    private boolean hcnMode;
 
     private TextView status, title, artist, number;
     private ImageView playBtn;
@@ -32,6 +35,7 @@ public class BtActivity extends Activity implements NowPlaying.Listener {
         super.onCreate(savedInstanceState);
         nowPlaying = NowPlaying.get(this);
         bt = nowPlaying.btClient;
+        hcnMode = !Profile.isNwd(this) && HcnBt.installed(this);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -70,7 +74,10 @@ public class BtActivity extends Activity implements NowPlaying.Listener {
         statusBg.setColor(0x26FFFFFF);
         status.setBackground(statusBg);
         Ui.pressable(status, 0.94f);
-        status.setOnClickListener(v -> startActivity(new android.content.Intent(this, BtDevicesActivity.class)));
+        status.setOnClickListener(v -> {
+            if (hcnMode) Ui.launch(this, HCN_PHONE);
+            else startActivity(new android.content.Intent(this, BtDevicesActivity.class));
+        });
         bar.addView(status);
         return bar;
     }
@@ -116,13 +123,13 @@ public class BtActivity extends Activity implements NowPlaying.Listener {
         LinearLayout controls = new LinearLayout(this);
         controls.setGravity(Gravity.CENTER_VERTICAL);
         controls.addView(Ui.iconButton(this, R.drawable.ic_prev, 60, false,
-                () -> bt.playControl(BtClient.PREVIOUS)), new LinearLayout.LayoutParams(dp(60), dp(60)));
+                () -> nowPlaying.skip(false)), new LinearLayout.LayoutParams(dp(60), dp(60)));
         playBtn = Ui.iconButton(this, R.drawable.ic_play, 80, true, this::togglePlay);
         LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(dp(80), dp(80));
         plp.setMargins(dp(22), 0, dp(22), 0);
         controls.addView(playBtn, plp);
         controls.addView(Ui.iconButton(this, R.drawable.ic_next, 60, false,
-                () -> bt.playControl(BtClient.NEXT)), new LinearLayout.LayoutParams(dp(60), dp(60)));
+                () -> nowPlaying.skip(true)), new LinearLayout.LayoutParams(dp(60), dp(60)));
         content.addView(controls);
 
         card.addView(content, new FrameLayout.LayoutParams(-1, -1));
@@ -130,6 +137,10 @@ public class BtActivity extends Activity implements NowPlaying.Listener {
     }
 
     private void togglePlay() {
+        if (hcnMode) {
+            nowPlaying.playPause();
+            return;
+        }
         NowPlaying.Track t = nowPlaying.track(NowPlaying.Source.BT);
         if (t.playing) {
             bt.playControl(BtClient.PAUSE);
@@ -140,6 +151,7 @@ public class BtActivity extends Activity implements NowPlaying.Listener {
     }
 
     private View buildDialer() {
+        if (hcnMode) return buildHcnPhone();
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(16), dp(12), dp(16), dp(14));
@@ -201,6 +213,44 @@ public class BtActivity extends Activity implements NowPlaying.Listener {
         return card;
     }
 
+    private View buildHcnPhone() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(Gravity.CENTER);
+        card.setPadding(dp(24), dp(20), dp(24), dp(20));
+        card.setBackground(Ui.card(this));
+
+        TextView title = Ui.text(this, "TELÉFONO", 13, 0xCCFFFFFF);
+        title.setLetterSpacing(0.12f);
+        card.addView(title);
+
+        TextView note = Ui.text(this, "El marcador y los contactos los maneja la app de fábrica.", 13, 0xB3FFFFFF);
+        note.setSingleLine(false);
+        note.setGravity(Gravity.CENTER);
+        note.setPadding(0, dp(12), 0, dp(18));
+        card.addView(note);
+
+        TextView phone = actionButton("Abrir teléfono", () -> Ui.launch(this, HCN_PHONE));
+        card.addView(phone, new LinearLayout.LayoutParams(-1, dp(54)));
+
+        LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(-1, dp(54));
+        mlp.topMargin = dp(10);
+        TextView music = actionButton("Música Bluetooth", () -> Ui.launch(this, HCN_BT_MUSIC));
+        card.addView(music, mlp);
+        return card;
+    }
+
+    private TextView actionButton(String text, Runnable action) {
+        TextView b = Ui.text(this, text, 17, Color.WHITE);
+        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                Accent.gradient(this));
+        bg.setCornerRadius(dp(16));
+        b.setBackground(bg);
+        Ui.pressable(b, 0.94f);
+        b.setOnClickListener(v -> action.run());
+        return b;
+    }
+
     private void call() {
         String n = number.getText().toString();
         if (n.isEmpty()) return;
@@ -212,6 +262,12 @@ public class BtActivity extends Activity implements NowPlaying.Listener {
     }
 
     private void refreshStatus() {
+        if (hcnMode) {
+            boolean connected = nowPlaying.hcn.a2dp;
+            status.setText(connected ? "●  Bluetooth conectado" : "Sin teléfono · Conectar");
+            statusBg.setColor(connected ? 0xCC1E9E5A : 0x26FFFFFF);
+            return;
+        }
         String name = bt.isPhoneConnected() ? bt.deviceName() : null;
         boolean connected = bt.isPhoneConnected();
         status.setText(connected ? "●  " + (name == null || name.isEmpty() ? "Teléfono conectado" : name)
@@ -222,7 +278,8 @@ public class BtActivity extends Activity implements NowPlaying.Listener {
     @Override
     public void onNowPlayingChanged() {
         NowPlaying.Track t = nowPlaying.track(NowPlaying.Source.BT);
-        title.setText(t.title.isEmpty() ? (bt.isPhoneConnected() ? "Pon música en tu teléfono" : "Sin conexión") : t.title);
+        boolean connected = hcnMode ? nowPlaying.hcn.a2dp : bt.isPhoneConnected();
+        title.setText(t.title.isEmpty() ? (connected ? "Pon música en tu teléfono" : "Sin conexión") : t.title);
         artist.setText(t.title.isEmpty() ? "" : t.artist);
         playBtn.setImageResource(t.playing ? R.drawable.ic_pause : R.drawable.ic_play);
     }

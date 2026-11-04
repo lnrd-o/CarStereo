@@ -19,12 +19,15 @@ import java.util.List;
 public class RadioActivity extends Activity {
 
     private static final String FACTORY_RADIO = "com.nwd.radio/.home_horizontalActivity";
+    private static final String HCN_FACTORY_RADIO = "com.hcn.autoradio/.RadioMain";
     private static final int PRESET_SLOTS = 6;
 
     private final RadioClient radio = new RadioClient();
+    private final HcnRadio hcn = new HcnRadio();
     private final Handler handler = new Handler();
+    private boolean hcnMode;
 
-    private TextView band, station, freq, unit;
+    private TextView band, station, freq, unit, radioText;
     private DialView dial;
     private final List<TextView[]> presetViews = new ArrayList<>();
     private final List<LinearLayout> presetTiles = new ArrayList<>();
@@ -53,7 +56,9 @@ public class RadioActivity extends Activity {
         body.addView(buildPresets(), plp);
 
         setContentView(root);
-        radio.bind(this);
+        hcnMode = !Profile.isNwd(this) && HcnRadio.installed(this);
+        if (hcnMode) hcn.bind(this, this::refresh);
+        else radio.bind(this);
     }
 
     private View buildTopBar() {
@@ -68,12 +73,13 @@ public class RadioActivity extends Activity {
         title.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
 
         TextView classic = chip("Vista clásica", 0x26FFFFFF);
-        classic.setOnClickListener(v -> Ui.launch(this, FACTORY_RADIO));
+        classic.setOnClickListener(v -> Ui.launch(this, hcnMode ? HCN_FACTORY_RADIO : FACTORY_RADIO));
         bar.addView(classic);
 
         band = chip("FM1", 0xFF4F7BFF);
         band.setTypeface(Typeface.DEFAULT_BOLD);
         band.setOnClickListener(v -> {
+            if (hcnMode) return;
             radio.changeBand();
             handler.postDelayed(this::refresh, 400);
         });
@@ -104,6 +110,14 @@ public class RadioActivity extends Activity {
         station = Ui.text(this, "", 18, 0xCCFFFFFF);
         card.addView(station);
 
+        radioText = Ui.text(this, "", 14, 0xB3FFFFFF);
+        radioText.setSingleLine(true);
+        radioText.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
+        radioText.setMarqueeRepeatLimit(-1);
+        radioText.setSelected(true);
+        radioText.setPadding(0, dp(4), 0, dp(2));
+        card.addView(radioText);
+
         LinearLayout big = new LinearLayout(this);
         big.setGravity(Gravity.CENTER);
         freq = Ui.text(this, "--.-", 104, Color.WHITE);
@@ -123,10 +137,10 @@ public class RadioActivity extends Activity {
         LinearLayout controls = new LinearLayout(this);
         controls.setGravity(Gravity.CENTER);
         controls.setPadding(0, dp(14), 0, 0);
-        controls.addView(control(R.drawable.ic_rewind, "Buscar", false, () -> { radio.seek(false); soon(); }));
-        controls.addView(control(R.drawable.ic_prev, "Anterior", true, () -> { radio.preset(false); soon(); }));
-        controls.addView(control(R.drawable.ic_next, "Siguiente", true, () -> { radio.preset(true); soon(); }));
-        controls.addView(control(R.drawable.ic_forward, "Buscar", false, () -> { radio.seek(true); soon(); }));
+        controls.addView(control(R.drawable.ic_rewind, "Buscar", false, () -> { if (hcnMode) hcn.seekDown(); else radio.seek(false); soon(); }));
+        controls.addView(control(R.drawable.ic_prev, "Anterior", true, () -> { if (hcnMode) hcn.presetDown(); else radio.preset(false); soon(); }));
+        controls.addView(control(R.drawable.ic_next, "Siguiente", true, () -> { if (hcnMode) hcn.presetUp(); else radio.preset(true); soon(); }));
+        controls.addView(control(R.drawable.ic_forward, "Buscar", false, () -> { if (hcnMode) hcn.seekUp(); else radio.seek(true); soon(); }));
         card.addView(controls);
         return card;
     }
@@ -173,7 +187,8 @@ public class RadioActivity extends Activity {
                 Ui.pressable(tile, 0.94f);
                 tile.setOnClickListener(v -> {
                     if (index < presets.size()) {
-                        radio.tune(presets.get(index), index);
+                        if (hcnMode) hcn.gotoFreq(HcnRadio.toKhz(presets.get(index)));
+                        else radio.tune(presets.get(index), index);
                         soon();
                     }
                 });
@@ -194,14 +209,18 @@ public class RadioActivity extends Activity {
     }
 
     private void refresh() {
-        RadioClient.Station cur = radio.current();
-        if (tick++ % 4 == 0 || presets.isEmpty()) presets = radio.presets();
+        RadioClient.Station cur = hcnMode
+                ? (hcn.isBound() ? hcn.current() : null)
+                : radio.current();
+        if (tick++ % 4 == 0 || presets.isEmpty()) presets = hcnMode ? hcnPresets() : radio.presets();
         if (cur == null) {
-            station.setText(radio.isConnected() ? "" : "Conectando con la radio…");
+            boolean connected = hcnMode ? hcn.isBound() : radio.isConnected();
+            station.setText(connected ? "" : "Conectando con la radio…");
             return;
         }
         band.setText(cur.bandLabel());
         station.setText(cur.psName.isEmpty() ? "Radio " + cur.bandLabel() : cur.psName);
+        if (radioText != null) radioText.setText(hcnMode ? hcn.radioText() : "");
         freq.setText(cur.frequencyLabel());
         unit.setText(cur.isAm() ? "kHz" : "MHz");
         dial.setVisibility(cur.isAm() ? View.INVISIBLE : View.VISIBLE);
@@ -220,6 +239,15 @@ public class RadioActivity extends Activity {
         }
     }
 
+    /** Saved HCN stations without the empty preset slots. */
+    private List<RadioClient.Station> hcnPresets() {
+        List<RadioClient.Station> out = new ArrayList<>();
+        for (RadioClient.Station s : hcn.presets()) {
+            if (!HcnRadio.isEmptySlot(HcnRadio.toKhz(s))) out.add(s);
+        }
+        return out;
+    }
+
     private final Runnable poll = new Runnable() {
         public void run() {
             refresh();
@@ -230,8 +258,13 @@ public class RadioActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        // Coming from Bluetooth/USB: switch to the radio and wake the tuner.
-        if (!Ui.radioIsSource(this) || !radio.isConnected()) {
+        if (hcnMode) {
+            hcn.bind(this, () -> {
+                hcn.requestPlay();
+                refresh();
+            });
+        } else if (!Ui.radioIsSource(this) || !radio.isConnected()) {
+            // Coming from Bluetooth/USB: switch to the radio and wake the tuner.
             handler.postDelayed(() -> Ui.selectRadio(this, radio), 300);
         }
         handler.post(poll);
@@ -247,6 +280,7 @@ public class RadioActivity extends Activity {
     protected void onDestroy() {
         super.onDestroy();
         radio.unbind(this);
+        hcn.unbind(this);
     }
 
     private int dp(int v) {

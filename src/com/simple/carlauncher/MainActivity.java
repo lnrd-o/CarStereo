@@ -31,7 +31,10 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
 
     private final Handler handler = new Handler();
     private final RadioClient radio = new RadioClient();
+    private final HcnRadio hcnRadio = new HcnRadio();
     private NowPlaying nowPlaying;
+    private boolean hcnRadioMode;
+    private boolean hcnRadioActive;
 
     private TextView greeting, weatherTemp, weatherDesc, weatherCity, weatherExtra;
     private ImageView weatherIcon;
@@ -57,7 +60,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     private LinearLayout radioPanel;
     private ImageView art, playBtn;
     private TextView songSource, songTitle, songArtist;
-    private TextView fmBand, fmFreq, fmUnit, radioPs;
+    private TextView fmBand, fmFreq, fmUnit, radioPs, radioRt;
     private Bitmap lastArt;
     private boolean radioActive;
 
@@ -118,6 +121,8 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         });
 
         radio.bind(this);
+        hcnRadioMode = !Profile.isNwd(this) && HcnRadio.installed(this);
+        if (hcnRadioMode) hcnRadio.bind(this, this::renderNow);
         nowPlaying = NowPlaying.get(this);
         createdDark = Ui.isDark(this);
         createdProfile = profileStamp();
@@ -608,8 +613,15 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         fmUnit = Ui.text(this, "MHz", 14, 0x99FFFFFF);
         radioPanel.addView(fmUnit);
         radioPs = Ui.text(this, "Sin RDS", 15, 0xCCFFFFFF);
-        radioPs.setPadding(0, dp(8), 0, dp(10));
+        radioPs.setPadding(0, dp(8), 0, dp(2));
         radioPanel.addView(radioPs);
+        radioRt = Ui.text(this, "", 13, 0xB3FFFFFF);
+        radioRt.setSingleLine(true);
+        radioRt.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
+        radioRt.setMarqueeRepeatLimit(-1);
+        radioRt.setSelected(true);
+        radioRt.setPadding(0, 0, 0, dp(10));
+        radioPanel.addView(radioRt);
 
         LinearLayout rControls = new LinearLayout(this);
         rControls.setGravity(Gravity.CENTER);
@@ -680,9 +692,19 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     }
 
     private void renderNow() {
-        boolean radioOn = Profile.isNwd(this) && Ui.radioIsSource(this);
+        boolean radioOn = Profile.isNwd(this) ? Ui.radioIsSource(this)
+                : (hcnRadioMode && hcnRadioActive);
         radioActive = radioOn;
-        RadioClient.Station st = radioOn ? radio.current() : null;
+        RadioClient.Station st = null;
+        String rt = "";
+        if (radioOn) {
+            if (hcnRadioMode) {
+                st = hcnRadio.isBound() ? hcnRadio.current() : null;
+                rt = hcnRadio.isBound() ? hcnRadio.radioText() : "";
+            } else {
+                st = radio.current();
+            }
+        }
         String rBand = st == null ? "RADIO" : st.bandLabel();
         String rFreq = st == null ? "--.-" : st.frequencyLabel();
         String rUnit = st == null ? "MHz" : (st.isAm() ? "kHz" : "MHz");
@@ -695,6 +717,10 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
             fmFreq.setText(rFreq);
             fmUnit.setText(rUnit);
             radioPs.setText(rPs.isEmpty() ? "Sin RDS" : rPs);
+            if (radioRt != null) {
+                radioRt.setText(rt);
+                radioRt.setVisibility(rt.isEmpty() ? View.GONE : View.VISIBLE);
+            }
         }
 
         NowPlaying.Source s = nowPlaying.current();
@@ -731,7 +757,8 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
             if (radioOn) {
                 m.source.setText("RADIO · " + rBand);
                 m.title.setText(rPs.isEmpty() ? rFreq + " " + rUnit : rPs);
-                m.sub.setText(rFreq + " " + rUnit + (rPs.isEmpty() ? "" : " · RDS"));
+                m.sub.setText(!rt.isEmpty() ? rt
+                        : rFreq + " " + rUnit + (rPs.isEmpty() ? "" : " · RDS"));
                 m.play.setImageResource(R.drawable.ic_radio);
             } else {
                 m.source.setText(src);
@@ -744,10 +771,20 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
 
     @Override
     public void onNowPlayingChanged() {
+        if (hcnRadioMode && nowPlaying.hcn.isBound() && nowPlaying.hcn.playing) {
+            hcnRadioActive = false;
+        }
         renderNow();
     }
 
     private void stationStep(boolean next) {
+        if (hcnRadioMode) {
+            withHcnRadio(() -> {
+                if (next) hcnRadio.presetUp();
+                else hcnRadio.presetDown();
+            });
+            return;
+        }
         if (!Profile.isNwd(this)) {
             openRadio();
             return;
@@ -761,9 +798,26 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         handler.postDelayed(this::renderNow, 300);
     }
 
+    /** Binds the HCN radio if needed, brings its audio up and runs the action. */
+    private void withHcnRadio(Runnable action) {
+        hcnRadioActive = true;
+        Runnable run = () -> {
+            if (nowPlaying != null && nowPlaying.hcn.isBound() && nowPlaying.hcn.playing) {
+                nowPlaying.hcn.command(HcnBt.PAUSE);
+            }
+            hcnRadio.requestPlay();
+            handler.postDelayed(() -> {
+                action.run();
+                handler.postDelayed(this::renderNow, 400);
+            }, 250);
+        };
+        if (hcnRadio.isBound()) run.run();
+        else hcnRadio.bind(this, run);
+    }
+
     private final Runnable radioPoll = new Runnable() {
         public void run() {
-            if (Profile.isNwd(MainActivity.this)) renderNow();
+            if (Profile.isNwd(MainActivity.this) || hcnRadioMode) renderNow();
             handler.postDelayed(this, 1000);
         }
     };
@@ -828,6 +882,11 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     // ---------- Shortcuts ----------
 
     private void openRadio() {
+        if (hcnRadioMode) {
+            hcnRadioActive = true;
+            startActivity(new Intent(this, RadioActivity.class));
+            return;
+        }
         if (Profile.isNwd(this)) startActivity(new Intent(this, RadioActivity.class));
         else if (!launchByKeyword("radio", "fm", "tuner")) toast("No se encontró una app de radio");
     }
@@ -929,9 +988,10 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
 
         wave.setActive(ColorActivity.waveEnabled(this));
         mapPaused(page);
+        if (hcnRadioMode) hcnRadio.bind(this, this::renderNow);
         handler.post(periodic);
         handler.post(liveTick);
-        if (Profile.isNwd(this)) handler.post(radioPoll);
+        if (Profile.isNwd(this) || hcnRadioMode) handler.post(radioPoll);
         nowPlaying.addListener(this);
         renderNow();
     }
@@ -968,6 +1028,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     protected void onDestroy() {
         super.onDestroy();
         radio.unbind(this);
+        hcnRadio.unbind(this);
     }
 
     private TextView left(TextView tv) {

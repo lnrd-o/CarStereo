@@ -52,6 +52,7 @@ final class NowPlaying {
     private final List<Listener> listeners = new ArrayList<>();
     private final Track app = new Track(), local = new Track(), bt = new Track();
     final BtClient btClient = new BtClient();
+    final HcnBt hcn = new HcnBt();
 
     private final MediaSessionManager sessions;
     private final ComponentName notificationListener;
@@ -79,12 +80,32 @@ final class NowPlaying {
         }
         refreshSessions();
 
-        btClient.bind(c, () -> {
-            bt.playing = btClient.isMusicPlaying();
-            if (bt.playing) bt.updated = SystemClock.elapsedRealtime();
-            btClient.queryId3();
-            notifyListeners();
-        });
+        if (Profile.isNwd(c)) {
+            btClient.bind(c, () -> {
+                bt.playing = btClient.isMusicPlaying();
+                if (bt.playing) bt.updated = SystemClock.elapsedRealtime();
+                btClient.queryId3();
+                notifyListeners();
+            });
+        } else if (HcnBt.installed(c)) {
+            hcn.bind(c, this::onHcnChanged);
+        }
+    }
+
+    /** HCN units: mirror the factory music service into the Bluetooth track. */
+    private void onHcnChanged() {
+        if (hcn.a2dp && (hcn.playing || !hcn.title.isEmpty())) {
+            bt.title = hcn.title;
+            bt.artist = hcn.artist;
+            bt.playing = hcn.playing;
+            bt.updated = SystemClock.elapsedRealtime();
+        } else if (!hcn.a2dp) {
+            bt.title = "";
+            bt.artist = "";
+            bt.playing = false;
+            bt.updated = 0;
+        }
+        notifyListeners();
     }
 
     private final BroadcastReceiver receiver = new BroadcastReceiver() {
@@ -222,7 +243,9 @@ final class NowPlaying {
     void playPause() {
         Source s = current();
         if (s == Source.BT) {
-            if (Ui.radioIsSource(ctx)) {
+            if (hcn.isBound()) {
+                hcn.command(bt.playing ? HcnBt.PAUSE : HcnBt.PLAY);
+            } else if (Ui.radioIsSource(ctx)) {
                 // Radio has the speakers (the phone may even be playing muted): bring Bluetooth in.
                 Ui.userChoseRadioAt = 0;
                 Ui.selectBluetooth(ctx);
@@ -241,7 +264,11 @@ final class NowPlaying {
     void skip(boolean next) {
         Source s = current();
         if (s == Source.BT) {
-            btClient.playControl(next ? BtClient.NEXT : BtClient.PREVIOUS);
+            if (hcn.isBound()) {
+                hcn.command(next ? HcnBt.NEXT : HcnBt.PREVIOUS);
+            } else {
+                btClient.playControl(next ? BtClient.NEXT : BtClient.PREVIOUS);
+            }
         } else if (s == Source.APP && controller != null) {
             if (next) controller.getTransportControls().skipToNext();
             else controller.getTransportControls().skipToPrevious();
@@ -267,6 +294,7 @@ final class NowPlaying {
         listeners.add(l);
         refreshSessions();
         if (btClient.isBound()) btClient.queryId3();
+        if (hcn.isBound()) hcn.refresh();
     }
 
     void removeListener(Listener l) {
